@@ -1,6 +1,6 @@
 from py2neo.ogm import RelatedObjects
-from settings import graph, relationship_matcher, models
-import exceptions
+from .config import models
+from . import exceptions
 
 
 class RelationshipManager:
