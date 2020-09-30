@@ -1,9 +1,9 @@
-from py2neo.ogm import RelatedObjects
-from .config import models
+from py2neo.ogm import GraphObject, RelatedObjects
+from .config import models, NeoConfig
 from . import exceptions
 
 
-class RelationshipManager:
+class RelationshipManager(NeoConfig):
     @classmethod
     def get_relationship(cls, start_node=None, end_node=None, r_type=None,
                          *args, **kwargs):
@@ -25,9 +25,8 @@ class RelationshipManager:
         Return
             Relationship
         """
-        rel = relationship_matcher.match(nodes=[start_node, end_node],
-                                         r_type=r_type,
-                                         **kwargs)
+        rel = cls.relationship_matcher.match(nodes=[start_node, end_node],
+                                             r_type=r_type, **kwargs)
         if not rel.exists():
             raise exceptions.RelationshipMatchError(
                 "No Relationship with given properties exists"
@@ -62,7 +61,7 @@ class RelationshipManager:
         relationship = cls.get_relationship(start_node=start_node,
                                             end_node=end_node,
                                             r_type=r_type, **kwargs)
-        graph.separate(relationship)
+        cls.graph.separate(relationship)
 
     @classmethod
     def delete_all(cls, start_obj=None, end_obj=None, r_type=None,
@@ -83,17 +82,14 @@ class RelationshipManager:
         """
         start_node = None if start_obj is None else start_obj.node
         end_node = None if end_obj is None else end_obj.node
-        rels = relationship_matcher.match(nodes=[start_node, end_node],
-                                          r_type=r_type, **kwargs)
+        rels = cls.relationship_matcher.match(nodes=[start_node, end_node],
+                                              r_type=r_type, **kwargs)
 
         for rel in rels.all():
-            graph.separate(rel)
+            cls.graph.separate(rel)
 
 
-class Neo4JManager:
-    graph = None
-    matcher = None
-    relationship_matcher = None
+class Neo4JManager(GraphObject, NeoConfig):
     node = None
 
     @classmethod
@@ -120,18 +116,29 @@ class Neo4JManager:
 
     @classmethod
     def filter_nodes(cls, *args, **kwargs):
+        """
+        Get Query for Nodes. Returns NodeMatcher.
+        """
         props, rels = cls.split_property_from_relationships(*args, **kwargs)
         nodes = cls.matcher.match(cls.__name__, **props)
         return nodes
 
     @classmethod
     def filter_object(cls, *args, **kwargs):
+        """
+        Get Query for Nodes. Returns Object.
+        """
         nodes = cls.filter_nodes(*args, **kwargs).all()
-        instances = [cls.init_object_from_instance(node) for node in nodes]
+        instances = [cls.get_object_from_node(node) for node in nodes]
         return instances
 
     @classmethod
     def split_property_from_relationships(cls, *args, **kwargs):
+        """
+        Look into kwargs - split kwargs into Parameters and Relationship Attrs.
+        Returns
+            list of dictionaries
+        """
         properties, relationships = {}, {}
         for key, value in kwargs.items():
             if isinstance(cls().__getattribute__(key), RelatedObjects):
@@ -142,19 +149,38 @@ class Neo4JManager:
 
     @classmethod
     def get_node(cls, *args, **kwargs):
-        instances = cls.filter_nodes(*args, **kwargs)
-        if instances.first() is None:
+        """
+        Get Query for sigle Node.
+        Raise Error if node not found or multiple nodes exist.
+
+        Return:
+            Node
+        """
+        nodes = cls.filter_nodes(*args, **kwargs)
+        if nodes.first() is None:
             raise exceptions.DoesNotExist(
                 f"Found no instance for {cls.__name__}"
             )
-        if instances.count() > 1:
+        if nodes.count() > 1:
             raise exceptions.ToManyMatchesError(
-                "Found to many instances."
+                "Found to many nodes."
             )
-        return instances.first()
+        return nodes.first()
 
     @classmethod
     def get_related_node(cls, attr, attr_value, *args, **kwargs):
+        """
+        Get Related Nodes of object.
+        Can be query for just one Node or many nodes - depends on attr_value.
+
+        Parameter:
+            attr: string; related property name at class
+            attr_value: any type || list of any types
+                        Value(s) of related properties (should be primary key)
+
+        Returns:
+            RelatedNode || List of RelatedNodes
+        """
         obj = cls()
         related_class_obj = obj.__getattribute__(attr).related_class
         model = related_class_obj.__primarylabel__
@@ -172,9 +198,17 @@ class Neo4JManager:
 
     @classmethod
     def get_object(cls, *args, **kwargs):
+        """
+        Get single instance of Node.
+        Raise Errors in case of multiple nodes or if node not exists.
+
+        Returns:
+            Object
+            Class of Node
+        """
         props, rels = cls.split_property_from_relationships(*args, **kwargs)
         node = cls.get_node(**props)
-        instance = cls.init_object_from_instance(node)
+        instance = cls.get_object_from_node(node)
         for key, value in rels.items():
             rel = cls.get_related_node(attr=key, attr_value=value)
             if isinstance(rel, list):
@@ -190,6 +224,10 @@ class Neo4JManager:
         """
         Returns an object if exists.
         Create an object if its not exists.
+
+        Returns:
+            Object
+            Class instance of Node
         """
         try:
             instance = cls.get_object(*args, **kwargs)
@@ -198,11 +236,21 @@ class Neo4JManager:
         return instance
 
     @classmethod
-    def init_object_from_instance(cls, instance):
+    def get_object_from_node(cls, node):
+        """
+        Convert node to object.
+
+        Parameter:
+            node: Node object; Should be the node which should be transformed.
+
+        Returns:
+            Object
+            Class instance of node
+        """
         obj = cls()
         for key, value in cls.__dict__.items():
-            if not key.startswith('__') and key in instance:
-                obj.__setattr__(key, instance[key])
+            if not key.startswith('__') and key in node:
+                obj.__setattr__(key, node[key])
         return obj
 
     def object_to_node(self):
@@ -219,6 +267,11 @@ class Neo4JManager:
         return node
 
     def save(self):
+        """
+        Save an existing object.
+        Object should have exists already befor save.
+        Use create if you want to create a new node.
+        """
         self.graph.push(self)
 
     def delete_hard(self):
