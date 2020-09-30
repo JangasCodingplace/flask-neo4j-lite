@@ -1,23 +1,12 @@
-asgiref==3.2.10
-flake8==3.8.3
-importlib-metadata==2.0.0
-mccabe==0.6.1
-pycodestyle==2.6.0
-pyflakes==2.2.0
-pytz==2020.1
-sqlparse==0.3.1
-zipp==3.2.0
-
 
 # The base set of requirements for REST framework is actually
-# just Django, but for the purposes of development and testing
+# just py2neo, but for the purposes of development and testing
 # there are a number of packages that are useful to install.
 
 # Laying these out as separate requirements files, allows us to
 # only included the relevant sets when running tox, and ensures
 # we are only ever declaring our dependencies in one place.
 
-# -r requirements/requirements-optionals.txt
 -r requirements/requirements-testing.txt
 -r requirements/requirements-documentation.txt
 -r requirements/requirements-codestyle.txt
